@@ -123,7 +123,11 @@ button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
 const GOOGLE_CLIENT_ID="";
 // ===== PAYMONGO: URL of your payment function (see setup steps). Leave "" to disable online payment =====
 const PAYMONGO_API="https://acxrobzulaswsubfoghg.supabase.co/functions/v1/paymongo";
-const P=[ /* ADD PRODUCTS HERE: ["Name",price,oldPrice,rating,"sold","Category","icon","#bgcolor","description",stockCount]  icons: bag shirt shoe watch phone home gift tag */ ].map((a,i)=>({id:i,n:a[0],p:a[1],o:a[2],r:a[3],s:a[4],c:a[5],e:a[6],bg:a[7],d:a[8],k:a[9]}));
+const SB_URL="https://acxrobzulaswsubfoghg.supabase.co",SB_KEY="sb_publishable_3Ehkqe8QtPVJQoh4FCZIVg_m2f8SOTD";
+// Products come from Supabase (add and edit them in the Orchid CRM > Kloze tab). P is looked up by product id.
+let P=[],PL=[];
+function setP(rows){P=[];rows.forEach(r=>{P[r.id]={id:r.id,n:r.name,p:Number(r.price),o:Math.max(Number(r.old_price||0),Number(r.price)),r:Number(r.rating),s:r.sold,c:r.category,e:r.icon,bg:r.bg,d:r.description,k:r.stock}});PL=P.filter(Boolean)}
+async function loadProducts(){try{const r=await fetch(SB_URL+"/rest/v1/kloze_products?select=*&active=eq.true&order=id.asc",{headers:{apikey:SB_KEY}});if(r.ok)setP(await r.json())}catch(e){console.error(e)}}
 const ic=n=>`<svg class="ic"><use href="#i-${n||"bag"}"/></svg>`,$=id=>document.getElementById(id),peso=n=>"₱"+n.toLocaleString("en-PH");
 const sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},ld=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}};
 let user=ld("kz_user",null),cart=ld("kz_cart",{}),wish=ld("kz_wish",{}),cat="All",pend=null,disc=0;
@@ -135,14 +139,14 @@ const auto=()=>{clearInterval(st);st=setInterval(()=>go(si+1),4500)};auto();$("s
 // countdown
 (function t(){const d=new Date(),e=new Date(d);e.setHours(23,59,59,999);let s=Math.floor((e-d)/1e3);const f=n=>String(n).padStart(2,"0"),u=(id,v,l)=>$(id).firstChild.nodeValue=f(v);u("h",s/3600|0);u("mi",s%3600/60|0);u("se",s%60);setTimeout(t,1000)})();
 // categories + grid
-$("cats").innerHTML=["All",...new Set(P.map(p=>p.c)),"Wishlist"].map(c=>`<button class="chip${c=="All"?" on":""}" data-c="${c}">${c}</button>`).join("");
+function setupCats(){$("cats").innerHTML=["All",...new Set(PL.map(p=>p.c)),"Wishlist"].map(c=>`<button class="chip${c==cat?" on":""}" data-c="${esc(c)}">${esc(c)}</button>`).join("")}
 $("cats").onclick=e=>{const b=e.target.closest(".chip");if(!b)return;cat=b.dataset.c;document.querySelectorAll(".chip").forEach(x=>x.classList.toggle("on",x==b));render()};
 $("q").oninput=render;$("sort").onchange=render;
-function render(){const em=!P.length;document.querySelector(".tb").style.display=document.querySelector(".cats").style.display=em?"none":"";if(em){$("grid").innerHTML=`<div class="none">${ic("bag")}<h3>Our shelves are being stocked</h3><p>New products are coming soon. Check back shortly.</p></div>`;return}
- const q=$("q").value.toLowerCase().trim();let l=P.filter(p=>(cat=="All"||(cat=="Wishlist"?wish[p.id]:cat=="Sale"?p.p/p.o<=.7:p.c==cat))&&p.n.toLowerCase().includes(q));const s=$("sort").value;
+function render(){const em=!PL.length;document.querySelector(".tb").style.display=document.querySelector(".cats").style.display=em?"none":"";if(em){$("grid").innerHTML=`<div class="none">${ic("bag")}<h3>Our shelves are being stocked</h3><p>New products are coming soon. Check back shortly.</p></div>`;return}
+ const q=$("q").value.toLowerCase().trim();let l=PL.filter(p=>(cat=="All"||(cat=="Wishlist"?wish[p.id]:cat=="Sale"?p.p/p.o<=.7:p.c==cat))&&p.n.toLowerCase().includes(q));const s=$("sort").value;
  if(s=="a")l.sort((a,b)=>a.p-b.p);else if(s=="d")l.sort((a,b)=>b.p-a.p);else if(s=="o")l.sort((a,b)=>b.o/b.p-a.o/a.p);
  $("ttl").textContent=q?`Results for “${$("q").value}”`:cat=="All"?"Just for you":cat;
- $("grid").innerHTML=l.length?l.map((p,i)=>`<div class="card" style="--i:${i}"><div class="img" style="background:${p.bg}" onclick="viewP(${p.id})"><span>${ic(p.e)}</span><i class="off">-${Math.round(100-p.p/p.o*100)}%</i><button class="heart${wish[p.id]?" on":""}" onclick="event.stopPropagation();heart(${p.id},this)" aria-label="Wishlist">${ic("heart")}</button></div><div class="bd"><div class="nm" onclick="viewP(${p.id})">${p.n}</div><div class="pr">${peso(p.p)}<s>${peso(p.o)}</s></div><div class="mt">${ic("star")} ${p.r} · ${p.s} sold</div><button class="add" ${p.k===0?"disabled":""} onclick="add(${p.id})">${p.k===0?"Sold out":"Add to cart"}</button></div></div>`).join(""):`<div class="none">${ic("search")}<h3>Nothing found</h3><p>Try another search.</p></div>`}
+ $("grid").innerHTML=l.length?l.map((p,i)=>`<div class="card" style="--i:${i}"><div class="img" style="background:${p.bg}" onclick="viewP(${p.id})"><span>${ic(p.e)}</span>${p.o>p.p?`<i class="off">-${Math.round(100-p.p/p.o*100)}%</i>`:""}<button class="heart${wish[p.id]?" on":""}" onclick="event.stopPropagation();heart(${p.id},this)" aria-label="Wishlist">${ic("heart")}</button></div><div class="bd"><div class="nm" onclick="viewP(${p.id})">${esc(p.n)}</div><div class="pr">${peso(p.p)}${p.o>p.p?`<s>${peso(p.o)}</s>`:""}</div><div class="mt">${ic("star")} ${p.r} · ${p.s} sold</div><button class="add" ${p.k===0?"disabled":""} onclick="add(${p.id})">${p.k===0?"Sold out":"Add to cart"}</button></div></div>`).join(""):`<div class="none">${ic("search")}<h3>Nothing found</h3><p>Try another search.</p></div>`}
 function heart(id,b){wish[id]=!wish[id];if(!wish[id])delete wish[id];sv("kz_wish",wish);b.classList.toggle("on",!!wish[id]);if(cat=="Wishlist")render()}
 // toast / overlays
 let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("on"),2400)}
@@ -164,18 +168,19 @@ var pendN=1;function add(id,n=1){const p=P[id];if(p.k===0){toast("Sorry, this it
 function qty(id,d){cart[id]=(cart[id]||0)+d;if(cart[id]<=0)delete cart[id];sv("kz_cart",cart);upd();drawCart()}
 function applyV(){const v=$("vc").value.trim().toUpperCase();if(v=="KLOZE10"){disc=.1;toast("Voucher applied: 10% off")}else{disc=0;toast("Invalid voucher")}drawCart()}
 function upd(){const n=Object.values(cart).reduce((a,b)=>a+b,0),b=$("cnt");b.textContent=n;b.classList.remove("b");void b.offsetWidth;b.classList.add("b")}
-function drawCart(){const ids=Object.keys(cart);let sub=0;$("items").innerHTML=ids.length?ids.map(i=>{const p=P[i],q=cart[i];sub+=p.p*q;return `<div class="it"><div class="th" style="background:${p.bg}">${ic(p.e)}</div><div class="in"><div>${p.n}</div><b>${peso(p.p)}</b><div class="q"><button onclick="qty(${i},-1)">−</button>${q}<button onclick="qty(${i},1)">+</button></div></div><button class="rm" onclick="qty(${i},-999)" aria-label="Remove">${ic("trash")}</button></div>`}).join(""):`<div class="empty">${ic("bag")}Your cart is empty.<br>Find something you love!</div>`;
+function drawCart(){const ids=Object.keys(cart);let sub=0;$("items").innerHTML=ids.length?ids.map(i=>{const p=P[i],q=cart[i];sub+=p.p*q;return `<div class="it"><div class="th" style="background:${p.bg}">${ic(p.e)}</div><div class="in"><div>${esc(p.n)}</div><b>${peso(p.p)}</b><div class="q"><button onclick="qty(${i},-1)">−</button>${q}<button onclick="qty(${i},1)">+</button></div></div><button class="rm" onclick="qty(${i},-999)" aria-label="Remove">${ic("trash")}</button></div>`}).join(""):`<div class="empty">${ic("bag")}Your cart is empty.<br>Find something you love!</div>`;
  const d=Math.round(sub*disc),sh=sub>=999||!sub?0:79,left=Math.max(0,999-sub);
  $("ship").innerHTML=sub?(left?`Add <b>${peso(left)}</b> more for <b>free shipping</b>`:ic("check")+" You unlocked <b>free shipping</b>!")+`<div class="pb"><i style="width:${Math.min(100,sub/999*100)}%"></i></div>`:"Free shipping over ₱999";
  $("sub").textContent=peso(sub);$("dis").textContent=d?"-"+peso(d):"—";$("shp").textContent=sub?(sh?peso(sh):"Free"):"—";$("tot").textContent=peso(sub-d+(sub?sh:0));$("co").disabled=!sub}
 function checkout(){openCo()}
-cart=Object.fromEntries(Object.entries(cart).filter(([k])=>P[k]));wish=Object.fromEntries(Object.entries(wish).filter(([k])=>P[k]));sv("kz_cart",cart);acct();render();upd();
+loadProducts().then(()=>{cart=Object.fromEntries(Object.entries(cart).filter(([k])=>P[k]));wish=Object.fromEntries(Object.entries(wish).filter(([k])=>P[k]));sv("kz_cart",cart);sv("kz_wish",wish);setupCats();render();upd()});
+sv("kz_cart",cart);acct();upd();
 
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const CATS=[["Fashion","shirt"],["Beauty","sparkle"],["Gadgets","phone"],["Home","home"],["Gifts","gift"],["Sale","bolt"]];
 $("tiles").innerHTML=CATS.map(c=>`<button class="tile" onclick="catGo('${c[0]}')">${ic(c[1])}${c[0]}</button>`).join("");
 $("fcats").innerHTML=CATS.map(c=>`<button class="l" onclick="catGo('${c[0]}')">${c[0]}</button>`).join("");$("yr").textContent=new Date().getFullYear();
-function catGo(c){if(!P.length){toast("Products are coming soon");return}cat=c;document.querySelectorAll(".chip").forEach(x=>x.classList.toggle("on",x.dataset.c==c));render();$("grid").scrollIntoView({behavior:"smooth"})}
+function catGo(c){if(!PL.length){toast("Products are coming soon");return}cat=c;document.querySelectorAll(".chip").forEach(x=>x.classList.toggle("on",x.dataset.c==c));render();$("grid").scrollIntoView({behavior:"smooth"})}
 addEventListener("click",e=>{if(!e.target.closest(".acw")){const m=$("am");m&&m.classList.remove("on")}});
 addEventListener("scroll",()=>$("top").classList.toggle("on",scrollY>700),{passive:true});
 function subs(){const v=$("nle").value.trim();if(!/^\S+@\S+\.\S+$/.test(v)){toast("Please enter a valid email");return}const l=ld("kz_news",[]);if(!l.includes(v))l.push(v);sv("kz_news",l);$("nle").value="";toast("Thanks for subscribing!")}
@@ -184,7 +189,7 @@ function pop(id){closeAll();$(id).classList.add("on");$("ov").classList.add("on"
 // ----- product page
 let pq=1;
 function viewP(id){const p=P[id],off=Math.round(100-p.p/p.o*100);pq=1;
- $("pv").innerHTML=`${XB}<div class="pvi" style="background:${p.bg}">${ic(p.e)}</div><h3>${esc(p.n)}</h3><div class="mt">${ic("star")} ${p.r} · ${esc(p.s)} sold · ${esc(p.c)}</div><div class="pr big">${peso(p.p)}<s>${peso(p.o)}</s><i>-${off}%</i></div><p class="desc">${esc(p.d||"A great pick from Kloze.")}</p>${p.k===0?`<div class="stk lo">Sold out</div>`:p.k!=null?`<div class="stk${p.k<=10?" lo":""}">${p.k<=10?"Only "+p.k+" left":"In stock"}</div>`:""}
+ $("pv").innerHTML=`${XB}<div class="pvi" style="background:${p.bg}">${ic(p.e)}</div><h3>${esc(p.n)}</h3><div class="mt">${ic("star")} ${p.r} · ${esc(p.s)} sold · ${esc(p.c)}</div><div class="pr big">${peso(p.p)}${p.o>p.p?`<s>${peso(p.o)}</s>`:""}${off>0?`<i>-${off}%</i>`:""}</div><p class="desc">${esc(p.d||"A great pick from Kloze.")}</p>${p.k===0?`<div class="stk lo">Sold out</div>`:p.k!=null?`<div class="stk${p.k<=10?" lo":""}">${p.k<=10?"Only "+p.k+" left":"In stock"}</div>`:""}
  ${p.k===0?"":`<div class="q lg"><button onclick="pqn(-1,${id})">−</button><span id="pqn">1</span><button onclick="pqn(1,${id})">+</button></div><div class="two"><button class="add" onclick="addPv(${id})">Add to cart</button><button class="co" onclick="buyNow(${id})">Buy now</button></div>`}`;pop("pv")}
 function pqn(d,id){const m=P[id].k??99;pq=Math.max(1,Math.min(m,pq+d));$("pqn").textContent=pq}
 function addPv(id){add(id,pq);if(user)closeAll()}
@@ -204,19 +209,20 @@ function coNext(){const n=$("sn").value.trim(),p=$("sp").value.replace(/[^\d+]/g
  SH={n,p,a,c};sv("kz_ship",SH);step=2;coDraw()}
 function okScreen(o){$("co2").innerHTML=XB+`<div class="ok">${ic("check")}<h3>Thank you, ${esc((SH.n||user.name).split(" ")[0])}!</h3><p>Your order <b>${o.id}</b> has been ${o.st=="Paid"?"paid and ":""}placed. We will process it shortly.</p><div class="two"><button class="add" onclick="openSide('orders')">My orders</button><button class="co" onclick="closeAll()">Keep shopping</button></div></div>`}
 function clearCart(){cart={};sv("kz_cart",cart);disc=0;upd();$("cnt").textContent=0}
-async function place(){const k=calc(),m=PAY.find(x=>x[0]==pay),
- o={id:"KZ"+Math.floor(1e6+Math.random()*9e6),t:Date.now(),items:Object.keys(cart).map(i=>({n:P[i].n,q:cart[i],p:P[i].p})),tot:k.tot,pay:m[1],st:pay=="cod"?"Processing":"Awaiting payment"};
- if(pay=="cod"){orders.unshift(o);sv("kz_orders",orders);clearCart();okScreen(o);return}
- if(!PAYMONGO_API){toast("Online payment isn't set up yet");return}
- const btn=document.querySelector("#co2 .co");btn.disabled=true;btn.textContent="Opening PayMongo…";
- try{const r=await fetch(PAYMONGO_API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"create",orderId:o.id,method:pay,amount:k.tot,items:o.items,shipping:SH,email:user.email,returnUrl:location.origin+location.pathname})});
-  const j=await r.json();if(!r.ok||!j.checkout_url)throw new Error(j.error||"failed");
-  o.sid=j.id;orders.unshift(o);sv("kz_orders",orders);location.href=j.checkout_url}
- catch(e){toast("Couldn't start payment. Please try again.");btn.disabled=false;btn.textContent="Pay now · "+peso(k.tot)}}
+async function place(){const k=calc(),m=PAY.find(x=>x[0]==pay),btn=document.querySelector("#co2 .co"),lbl=btn.textContent;
+ if(!PAYMONGO_API){toast("Checkout isn't set up yet");return}
+ btn.disabled=true;btn.textContent=pay=="cod"?"Placing order…":"Opening PayMongo…";
+ const body={action:pay=="cod"?"cod":"create",method:pay,voucher:disc?"KLOZE10":"",items:Object.keys(cart).map(i=>({id:Number(i),q:cart[i]})),shipping:SH,email:user.email,returnUrl:location.origin+location.pathname};
+ try{const r=await fetch(PAYMONGO_API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const j=await r.json();if(!r.ok||!j.orderId)throw new Error(j.error||"failed");
+  const o={id:j.orderId,t:Date.now(),items:Object.keys(cart).map(i=>({n:P[i].n,q:cart[i],p:P[i].p})),tot:j.total,pay:m[1],st:pay=="cod"?"Processing":"Awaiting payment",sid:j.id};
+  orders.unshift(o);sv("kz_orders",orders);
+  if(pay=="cod"){clearCart();okScreen(o);loadProducts().then(render)}else location.href=j.checkout_url}
+ catch(e){toast(e.message&&e.message!="failed"&&e.message!="Failed to fetch"?e.message:"Couldn't place your order. Please try again.");btn.disabled=false;btn.textContent=lbl}}
 // ----- return from PayMongo
 (async function(){const q=new URLSearchParams(location.search),pid=q.get("kz_paid"),cid=q.get("kz_cancel");if(!pid&&!cid)return;history.replaceState(null,"",location.pathname);
  const o=orders.find(x=>x.id==(pid||cid));if(!o)return;
- if(cid){o.st="Cancelled";sv("kz_orders",orders);toast("Payment cancelled. Your cart is still saved.");return}
+ if(cid){o.st="Cancelled";sv("kz_orders",orders);try{fetch(PAYMONGO_API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"cancel",orderId:o.id,sessionId:o.sid})})}catch(e){}toast("Payment cancelled. Your cart is still saved.");return}
  try{const r=await fetch(PAYMONGO_API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"verify",sessionId:o.sid,orderId:o.id})}),j=await r.json();
   if(j.paid){o.st="Paid";sv("kz_orders",orders);clearCart();pop("co2");okScreen(o)}
   else toast("We couldn't confirm your payment yet. Check My orders in a moment.")}
